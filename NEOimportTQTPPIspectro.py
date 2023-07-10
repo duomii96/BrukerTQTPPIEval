@@ -232,8 +232,11 @@ def importTQTPPIspec(data_path, spikeComp, phaseCorr, preDCcomp, filter2ndDim, f
         tqFID = tqFID * np.exp(-1j * np.arange(size_tqFID[0]) * freqDriftPerDatapoint)
 
     if phaseCorr:
+        if tqFID.ndim < 2:
+            tqFID = np.expand_dims(tqFID, axis=1)
         for idx in range(tqFID.shape[1]):
             tqFID[:, idx] = tqFID[:, idx] * np.exp(-1j * np.angle(tqFID[0, idx]))
+
 
     # ---- 10 PostDCcomp -------------------------------------------------------------------
     if postDCcomp:

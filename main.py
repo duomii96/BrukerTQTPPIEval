@@ -1,19 +1,20 @@
-from brukerapi.dataset import Dataset
-from brukerapi.folders import Study
 from NEOimportTQTPPIspectro import importTQTPPIspec
-import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib.pyplot as plt
-from TQTPPI_fit import FitTQTPPI
-from pathlib import Path
+from TQTPPI_fit import FitTQTPPI, fixedFitTQTPPI
+import stats
+from dataToFroFile import toFile
 
-#data_path = '/Users/duomii/Documents/PhD/Data/DZ_BR_immersed2_1_5_20221219_092719/9/rawdata.job0'
+
 #studyPath = '/Users/duomii/Documents/PhD/Data/DZ_BR_immersed2_1_5_20221219_092719/'
-#studyPath = '/Users/duomii/Documents/PhD/Data/DZ_DZ_CS_Test_BrukerLin_1_6_20230110_111523/' # BSA
-studyPath = '/Users/duomii/Documents/PhD/Data/AgarTmDOTP/DZ_DZ_TmDOTP_ISMRM22_1_1_20221016_104839/'
-startFolder, stopFolder = 7, 8
+studyPath = '/Users/duomii/Documents/PhD/Data/DZ_DZ_CS_Test_BrukerLin_1_6_20230110_111523/' # BSA
+#studyPath = '/Users/duomii/Documents/PhD/Data/AgarTmDOTP/DZ_DZ_TmDOTP_ISMRM22_1_1_20221016_104839/'
+startFolder, stopFolder = 58, 61
+#fixed
+#startFolder =   58; stopFolder = 61; IsFixed=1; #TQTPPI wo180 fix deltaAlpha = 5°, tevo = 5ms
+#startFolder, stopFolder = 135, 137 #129, 152
 skipIndices = []
-IsFixed = 0
+IsFixed = 1
 IsTauMixed=0
 
 skipIndices = np.unique(skipIndices)
@@ -24,6 +25,8 @@ skipIndices = skipIndices[skipIndices<stopFolder]
 mqFIDall, mqSpectraAll, tau = [], [], []
 j = 0 # index for multiple repetitions
 evoTimes = np.zeros((stopFolder - startFolder - len(skipIndices)+1, 1))
+if IsFixed:
+    fixedFIDall = []
 for k in np.arange(startFolder,stopFolder+1):
     if k in skipIndices:
         continue
@@ -67,13 +70,10 @@ for k in np.arange(startFolder,stopFolder+1):
     #     tqVal, posTq = np.max(np.abs(mqSpectra[int(np.fix(posSq/3))-2:int(np.fix(posSq/3))+2,0,0])), axis=0
     #     posTq = np.fix(posSq/3) - 2 + posTq - 1
         posTq = int(np.ceil(posSq/3))
-    if method['Method'] == '<User:dk_Tqtppi_fix1>':
+    if method['Method'] == '<User:dk_Tqtppi_fix1>' or IsFixed:
         evoTimeVec = np.arange(1, np.size(mqFID,0)+1)
     else:
         evoTimeVec = np.arange(evoTime, method['EvoTimeStep']*0.001*(method['NumPhaseSteps']*method['NumPhaseCycles']-1)/(np.size(mqFID,0)-1)+evoTime, method['EvoTimeStep']*0.001*(method['NumPhaseSteps']*method['NumPhaseCycles']-1)/(np.size(mqFID,0)-1))
-
-
-
 
 
     if NR == 1:
@@ -83,11 +83,17 @@ for k in np.arange(startFolder,stopFolder+1):
             tau[j] = evoTime
             evoTimes[j] = method.MixTime*1e-3 # us->ms
             j += 1
+        elif IsFixed:
+            fixedFIDall.append(np.squeeze(complexDataAllPhase))
+            mqSpectraAll.append(mqSpectra)
+            tau.append(evoTime)
+            evoTimes[j] = method['EvoTime']
+            j += 1
         else:
             mqFIDall.append(mqFID)
             mqSpectraAll.append(mqSpectra)
             tau.append(evoTime)
-            evoTimes[j] = method.EvoTime
+            evoTimes[j] = method["EvoTime"]
             j += 1
     else:
         if IsFixed: #and method.Method == '<User:sr_IRTQTPPI_0180supr>':
@@ -115,14 +121,23 @@ for k in np.arange(startFolder,stopFolder+1):
             evoTimes[evoTi] = method['EvoTime']
             j = j + NR
 
-# convert from list to np.array() and compute mean
-mqFID1 = np.mean(np.hstack(mqFIDall), axis=-1)
-mqSpectra1 = np.mean(np.hstack(mqSpectraAll), axis=-1)
 
-fit1 = FitTQTPPI(mqFID1, method, studyPath)
-fit1.fit()
-figure = fit1.get_figure()
-plt.show()
-print(fit1.get_fitParams())
+
+if IsFixed:
+    mqFIDs = np.array(fixedFIDall.copy())
+    print(mqFIDs.shape)
+    fit1 = fixedFitTQTPPI(mqFIDs, evoTimes)
+    print(str(fit1.posSq) + str(fit1.posTq) )
+
+else:
+    # convert from list to np.array() and compute mean
+    mqFID1 = np.mean(np.hstack(mqFIDall), axis=-1)
+    mqSpectra1 = np.mean(np.hstack(mqSpectraAll), axis=-1)
+    noise = stats.get_NoiseEstimate(np.hstack(mqSpectraAll))
+    fit1 = FitTQTPPI(mqFID1, method)
+#fit1.fit()
+#figure = fit1.get_figure()
+#plt.show()
+#toFile(fit1.get_fitParams(), studyPath, type='TQTPPI')
 """plt.plot(np.real(mqSpectra), linewidth=0.4)
 plt.show()"""
