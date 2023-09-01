@@ -3,12 +3,14 @@ import numpy as np
 from numpy.fft import fft, ifft, fftshift
 import numpy.random as rnd
 from pywt import threshold as thresh
+from scipy.optimize import curve_fit
 
 
 class RecoCS:
 
     def __init__(self, DataFull, samplingMethod, accelerationFactor, CS_Algorithm='IST-D',simul=True, multipleFIDs=False):
         initialData = DataFull
+        self.multipleFIDs = multipleFIDs
         if DataFull.ndim > 1:
             self.multipleFIDs = True
         self.DataFull = initialData
@@ -22,12 +24,18 @@ class RecoCS:
         self.threshold = 0.75
         self.CS_Algorithm = CS_Algorithm
         print(f"CS Alg.: {self.CS_Algorithm}")
+        self.x = np.arange(self.lenDataFull) * 2* np.pi / 360 # Thats default- but must be set from outside using x from GenClass
 
     @staticmethod
     def weightedSoftTH(y, thresholdMatrix):
         s = np.abs(y) - thresholdMatrix
         s = (s + np.abs(s)) / 2
         return np.sign(y) * s
+
+    @staticmethod
+    def fixedTQTPPI(x, a, b, c, d, e):
+
+        return a * np.sin(x + b) + c * np.sin(3 * x + d) + e
 
     def generateCSdata(self):
 
@@ -100,8 +108,9 @@ class RecoCS:
             cs_output = self.IST_D(cs_input, cs_mask)
         elif self.CS_Algorithm == 'IST_S':
             cs_output = self.IST_S(cs_input, cs_mask)
-        elif self.CS_Algorithm == 'CLEAN':
-            pass
+        elif self.CS_Algorithm == 'NUSF':
+            print("X data adjusted correctly ?")
+            cs_output =self.nonUniformFit(self.x)
             #cs_output = CLEAN(obj, cs_input, cs_mask)
 
         else:
@@ -110,6 +119,7 @@ class RecoCS:
 
     def IST_D(self, cs_input, cs_mask):
         """
+        Keeps balance between sparsity and measured data.
         IST_D Algorithm. Takes FT spectrum as input.
         :param cs_input: FT Spectrum of Data
         :param cs_mask:
@@ -118,13 +128,16 @@ class RecoCS:
         N_Iter = self.NIter
         t = self.threshold
         cs_input_init = cs_input.copy()
-        cs_output_ft = np.zeros_like(cs_input, dtype=np.complex128)
+        cs_output_ft = np.zeros_like(cs_input, dtype=np.complex128) # initialize x as zero vector
 
         if self.multipleFIDs:
+            THplot = []
 
             for i in range(N_Iter):
                 ft_cs = fft(cs_input_init, axis=1)
-                th = t * np.max(np.abs(ft_cs), axis=1)  # Calculate the threshold along the second dimension
+                th = t * np.max(np.abs(ft_cs), axis=1)
+
+                # Calculate the threshold along the second dimension
                 th_ft_cs = np.where(np.abs(ft_cs) >= th[:, np.newaxis], ft_cs, 0)  # Apply thresholding
 
                 cs_output_ft += th_ft_cs
@@ -136,6 +149,7 @@ class RecoCS:
             cs_output = ifft(cs_output_ft, axis=1)
         #norm_TH = 0.99 * abs(self.TH_spectrum / max(self.TH_spectrum))
         #norm_TH_it = norm_TH.copy()
+
         else:
             for i in range(N_Iter):
                 ft_cs = fft(cs_input_init)
@@ -162,6 +176,7 @@ class RecoCS:
     def IST_S(self, cs_input, cs_mask):
         """
         Returns spectrum- NOT FID !!!
+        Strict accordance with measured data at each iteration.
         :param cs_input:
         :param cs_mask:
         :return: Spectrum
@@ -170,16 +185,76 @@ class RecoCS:
         t = self.threshold
         cs_input_init = cs_input.copy()
 
-        cs_output = np.zeros(len(cs_input), dtype=np.complex128)
+        cs_output_ft = np.zeros(len(cs_input), dtype=np.complex128)
+        if self.multipleFIDs:
 
-        for i in range(N_Iter):
-            ft_cs = fft(cs_input_init)
-            th = t * max(abs(ft_cs)) * (N_Iter - i)/N_Iter# th is first a relative threshold
-            th_ft_cs = thresh(ft_cs, th, self.mode)
-            th_cs = ifft(th_ft_cs);
-            cs_input_init[~cs_mask] = th_cs[~cs_mask]
-        cs_output = cs_input_init
+            for i in range(N_Iter):
+                ft_cs = fft(cs_input_init, axis=1)
+                th = t * np.max(np.abs(ft_cs), axis=1) * (N_Iter - i)/N_Iter
+                th_ft_cs = np.where(np.abs(ft_cs) >= th[:, np.newaxis], ft_cs, 0)  # Apply thresholding
+
+                cs_output_ft += th_ft_cs
+
+                th_cs = np.fft.ifft(th_ft_cs, axis=1)
+                th_cs[:, ~cs_mask] = 0  # Set masked elements to 0 along the second dimension
+                cs_input_init = np.real(cs_input_init) - th_cs
+
+
+            cs_output = ifft(cs_output_ft, axis=1)
+        else:
+            for i in range(N_Iter):
+                ft_cs = fft(cs_input_init)
+                th = t * max(abs(ft_cs)) * (N_Iter - i)/N_Iter# th is first a relative threshold
+                th_ft_cs = thresh(ft_cs, th, self.mode)
+                th_cs = ifft(th_ft_cs);
+                cs_input_init[~cs_mask] = th_cs[~cs_mask]
+            cs_output = cs_input_init
         return cs_output
+
+
+    def nonUniformFFT(self):
+        """
+        Variables: (om, Nd, Kd, Jd).
+        - om = (M,1), with being number of non cartesian points i.e. mask in our case
+        - Nd = (Nfid,1), Number of points in fixedFID
+        - Kd = (Nkspace, 1) Spectra
+        - Jd = (6,1), size of Interpolator
+        Takes already undersampled (non-cartesian) data (1D or 2D) as input.
+        Needs:  - Mask
+                - not Zero filled CS Data
+        :return:
+        """
+        # https://jyhmiinlin.github.io/pynufft/index.html#document-tutor/init
+
+        X_notZeroFilled = np.arange(self.lenDataFull)[self.samplingMask]
+        Nd = (self.lenDataFull, 1) # maybe half it ?
+        Kd = (self.lenDataFull, 1)
+        Jd = (6, 1) # default
+
+        # create NUFFT object
+        pass
+
+    def nonUniformFit(self,x):
+        """
+        Fit the undersampled FID withput Reconstruction of the Missing data points.
+        :return:
+        """
+        #fitVecX = np.tile(np.arange(self.lenDataFull)[self.samplingMask], self.DataFull.shape[0]).reshape(self.DataFull.shape[0],-1)
+        #fitVecX = np.arange(self.lenDataFull, dtype=np.float)[self.samplingMask]
+        #fitVecX *= 2 * np.pi / 360
+        p_initial = np.array([0.7754, -0.7195, 0.2081, 0.8009, -0.002237])  # 2% Agarose default
+        #pOptAll, pCovAll = [], []
+        try:
+            pAll = [curve_fit(self.fixedTQTPPI, x[self.samplingMask], self.CS_data[i ,self.samplingMask], p0=p_initial) for i in range(self.CS_data.shape[0])]
+        except:
+            # If only one FID is fitted
+            pAll = curve_fit(self.fixedTQTPPI, x[self.samplingMask], self.CS_data[self.samplingMask], p0=p_initial)
+         # curve_fit(self.fixedTQTPPI, fitVecX, self.CS_data[:,self.samplingMask], p0=p_initial)
+        return pAll
+
+
+
+
 
 
 

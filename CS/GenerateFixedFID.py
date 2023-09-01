@@ -1,4 +1,6 @@
 import numpy as np
+from numpy.fft import fft, fftshift
+from CS.ComparisonMetrics import get_RecoTQSQ
 
 
 
@@ -62,6 +64,7 @@ class GenerateFIDfixed:
         return NumZeroFIDs, A
 
     def generateFIDsFixed(self, params, SNRs):
+        # Generates FIDs using the given Parameters and SNRs
 
         n, m = params.shape[0], SNRs.shape[0]
         FIDs = []
@@ -74,12 +77,20 @@ class GenerateFIDfixed:
                 FID = self.addGaussianNoise(FID, snr)
                 #self.FIDidcs.append(m* j+ i)
                 FIDs.append(FID)
+
+        self.FIDs = np.array(FIDs)
+        self.mqSpectra = fftshift(fft(self.FIDs))
+        self.TQSQgen = get_RecoTQSQ(self.mqSpectra)
         return np.array(FIDs), self.x, params, SNRs
 
     ##--------------------------------------------------------
     ## -------- Parameter Generation -------------------------
 
     def generateParamsFixed_TQ(self):
+        """
+        Generates a Parameter Matrix where only TQ signal varies.
+        :return:
+        """
         TQs = np.concatenate(([0.005], np.arange(0.01, 0.11, 0.01), np.arange(0.125, 0.251, 0.025)))
         n = len(TQs)
         params = np.tile(self.paramsDefaultFixed, (n, 1))
@@ -101,12 +112,11 @@ class GenerateFIDfixed:
         params[:, 2] = TQs
         return params, TQs, SQs
 
-    def varySNR(self):
-        SNRs = np.arange(40, 110, 10)
+    def varySNR(self, start=40, stop=200):
+        SNRs = np.arange(start, stop, 10)
         return SNRs.reshape(-1, 1)
 
-    def getTQSQ_initial(self, params):
-        return params[:, 2] / params[:, 0]
+
 
 
 

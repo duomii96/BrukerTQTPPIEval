@@ -3,6 +3,7 @@ Metrics to evaluate the recontructed signal from the compressed sensing algorith
 """
 import numpy as np
 import scipy.integrate as spint
+from functools import reduce
 
 
 def RMSE(prediction, target):
@@ -27,13 +28,21 @@ def simpson(prediction, target):
 
 def get_RecoTQSQ(spectra):
     # Return TQSQ as decimal
+    try:
+        # if multiple dim only
+        what, posSq= np.unravel_index(np.argmax(np.abs(spectra[1, :int(spectra.shape[-1] / 2)]), axis=None),
+                                      spectra[:, :int(spectra.shape[-1] / 2)].shape)
+        posTq = posSq - 32
+        ratio = np.abs(spectra[:, posTq] / spectra[:, posSq])
+    except:
+        (posSq,) = np.unravel_index(np.argmax(np.abs(spectra[:int(spectra.shape[-1] / 2)]), axis=None),
+                                       spectra[:int(spectra.shape[-1] / 2)].shape)
 
-    what, posSq= np.unravel_index(np.argmax(np.abs(spectra[1, :int(spectra.shape[-1] / 2)]), axis=None),
-                                  spectra[:, :int(spectra.shape[-1] / 2)].shape)
+        posTq = posSq - 32
+        ratio = np.abs(spectra[ posTq] / spectra[posSq])
     # self.posSq = posSq + (int(self.numPhaseInc / 4)) - 1
-    posTq = posSq - 32
-    return np.abs(spectra[:, posTq] / spectra[:, posSq])
 
+    return ratio
 
 
 
