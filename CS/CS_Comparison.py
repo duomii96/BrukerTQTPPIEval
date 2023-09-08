@@ -15,7 +15,7 @@ def fixedTQTPPI(x, params):
 
 def csToFile(data, type, alg, usf, gt, basePath='/Users/duomii/Desktop/PhD/Scripte/CS/'):
     """
-    Write cs data to file. Writes SQ, TQ, and Ratio to File for each USF.
+    Write cs data to file. Writes SQ, TQ, Ratio and RMSE (for IST-Algs only) to File for each USF.
     In case of IST Reco, also RMSE is written to File. Type is either MEasurement (BSA, Agar) or Simul
     :param data: Reco TQ, SQ and TQ/SQ ratio - depends on Reconstruction - if Simul then only Deviation and RMSE
     :param type: BSA or Simulation
@@ -27,9 +27,11 @@ def csToFile(data, type, alg, usf, gt, basePath='/Users/duomii/Desktop/PhD/Scrip
     :return:
     """
 
-    savePath = basePath + '/' + type
+    savePath = basePath + '/' + type + f'_{csAlg}'
 
-    if type == 'simulation':
+    if 'imul' in type:
+
+        dataSplit = int(data.shape[-1] / 2)
 
         # check if already exists
         if os.path.exists(savePath):
@@ -37,22 +39,25 @@ def csToFile(data, type, alg, usf, gt, basePath='/Users/duomii/Desktop/PhD/Scrip
             print("Path exists, data is appended \n")
             # overwrite ? or add/append new data
             with open(savePath + '.txt', 'a') as f:
-                f.write('Simulated TQ/SQ Ratios: {}; FID-length\n'.format(*gt))
+                f.write('Simulated TQ/SQ Ratios: {}; FID-length: {}\n'.format(*gt))
                 f.write(alg + ':\n')
                 for idx, el in enumerate(data):
                     f.write("USF: {}".format(usf[idx])+'\n')
-                    f.write("{:<20} {:<12} {:<12}".format('',*el))
-                    f.write('\n')
+                    for dev, rm in zip(el[:dataSplit], el[dataSplit:]):
+                        f.write("{:<20} {:<10} {:<10}".format('', dev, rm))
+                        f.write('\n')
         else:
             print("Create new folder \n")
             with open(savePath + '.txt', 'w') as f:
+                f.write('FID-length: {}\n'.format(gt[-1]))
                 f.write(alg + ':\n')
-                f.write("{:<20} {:<12} {:<12}\n".format('','TQ/SQ Deviation','RMSE (FID)'))
+                f.write("{:<20} {:<12} {:<12} {:<12}\n".format('','GT','TQ/SQ Dev. [%]','RMSE (FID)'))
                 for idx, el in enumerate(data):
 
                     f.write("USF: {}".format(usf[idx])+'\n')
-                    f.write("{:<20} {:<12} {:<12}".format('',*el))
-                    f.write('\n')
+                    for dev, rm, tr in zip(el[:dataSplit], el[dataSplit:], np.round(gt[0],4)):
+                        f.write("{:<20} {:<12} {:<15} {:<15}".format('',tr , dev, rm))
+                        f.write('\n')
     else:
         # Measurement
         if os.path.exists(savePath):
@@ -71,10 +76,10 @@ def csToFile(data, type, alg, usf, gt, basePath='/Users/duomii/Desktop/PhD/Scrip
             with open(savePath + '.txt', 'w') as f:
                 f.write("Truth Ratio: {} % \n".format(gt))
                 f.write(alg + ':\n')
-                f.write("{:<20} {:<12} {:<12} {:<12} \n".format('', 'SQ', 'TQ', 'TQ/SQ'))
+                f.write("{:<20} {:<12} {:<12} {:<12} {:<12}\n".format('', 'SQ', 'TQ', 'TQ/SQ', 'RMSE'))
                 for idx, el in enumerate(data):
                     f.write("USF: {}".format(usf[idx]) + '\n')
-                    f.write("{:<20} {:<12} {:<12} {:<12}".format('', *el))
+                    f.write("{:<20} {:<12} {:<12} {:<12} {:<12}".format('', *el))
                     f.write('\n')
 
 #tests.test_init()
@@ -126,10 +131,12 @@ else:
     startPhase = method['PhaseList'][0]
     numPhaseSteps = method['NumPhaseSteps']
     phaseStep = 360. / numPhaseSteps
+    x_degree = np.arange(90, phaseStep * len(mqFID) + 90, phaseStep)
+    x_rad = x_degree * 2 * np.pi / 360.
 
     (SQpeaks, TQpeaks, ratio) = getTQSQ(mqSpectra)
     truthTQSQRatio = np.array(TQpeaks/SQpeaks *100)
-    print(f"Truth Ratio: {truthTQSQRatio} \%")
+    #print(f"Truth Ratio: {truthTQSQRatio} \%")
 
 
 ### -----------------------------------------------------------------------------------------------------------------
@@ -139,14 +146,10 @@ print("Which Algorithm ? Either NUSF or IST-D: \n")
 
 csAlg = input()
 print(f"Alg. choosen: {csAlg} \n")
-
-if csAlg == 'NUSF' and not(simulation):
-    # calculate x range based on measurement data phase list
-    x_degree = np.arange(90, phaseStep * len(mqFID) + 90, phaseStep)
-    x_rad = x_degree * 2 * np.pi / 360.
+if csAlg == 'NUSF':
     nusfParAll = []
 
-USF = [2,4,6,8,10, 16]
+USF = [2, 4, 6, 12, 16]
 usfData = []
 recoRatios, recoRMSE, outAll, allMasked = [], [], [], []
 if simulation:
@@ -173,12 +176,14 @@ if simulation:
             outAll.append(out)
             ft_out = fftshift(fft(out))
             # get ground truth value here for estimation of reco error
-            recoTQSQ = get_RecoTQSQ(np.real(ft_out))
+            recoTQSQ = get_RecoTQSQ(np.abs(ft_out)) * 100 # to make it a percentage
             recoRatios.append(recoTQSQ)
 
             recoRMSE.append(RMSE(fidInput, np.real(out)))
-            deviationFromGT.append(recoTQSQ / targetAtqsq_woNoise *100)
+            deviationFromGT.append(np.abs((recoTQSQ / targetAtqsq_woNoise)) *100)
+            del recoTQSQ, ReCo
 
+    csToFile(np.hstack((np.round(deviationFromGT,3), np.round(recoRMSE,3))), 'Simulation', csAlg, USF, gt=[targetAtqsq_woNoise, FIDs.shape[-1]])
 
 else:
     # Measurement is used
@@ -189,10 +194,8 @@ else:
     for f in USF:
 
         ReCo = RecoCS(DataFull=fidInput, CS_Algorithm=csAlg, samplingMethod='PoissonGap', accelerationFactor=f)
-        if csAlg == 'NUSF':
-            ReCo.x = x_rad
-        else:
-            ReCo.x = x
+        ReCo.x = x_rad
+
         allMasked.append(ReCo.CS_data)
 
         if csAlg == 'NUSF':
@@ -211,11 +214,15 @@ else:
             out = ReCo.csReconstruction()
             outAll.append(out)
             ft_out = fftshift(fft(out))
-            ratios = get_RecoTQSQ(np.real(ft_out))
+            ratios = get_RecoTQSQ(np.real(ft_out)) * 100
+            rmse = RMSE(fidInput, np.real(out))
             recoRatios.append(ratios)
             recoRMSE.append(RMSE(fidInput, np.real(out)))
+
+            usfData.append(['-','-',np.round(np.abs(ratios),4), np.round(rmse,5)])
+
             del ratios, ft_out
-    csToFile(np.round(usfData,4), type='BSA_{}'.format(folderNum), alg=csAlg, usf=USF, gt=truthTQSQRatio)
+    csToFile(usfData, type='BSA_{}'.format(folderNum), alg=csAlg, usf=USF, gt=truthTQSQRatio)
         #Reco_4 = RecoCS(DataFull=fidInput,CS_Algorithm='IST-S',samplingMethod='PoissonGap',accelerationFactor=8)
 
 
@@ -228,7 +235,7 @@ print(f"Reconstructed Ratios: {recoRatios}")
 rmse = RMSE(np.real(ft_out), np.real(ftInput))
 pint = trapzoid(np.real(ft_out), np.real(ftInput))"""
 
-if csAlg == "NUSF":
+"""if csAlg == "NUSF":
     fig, (ax1, ax2, ax3, ax4, ax5) = plt.subplots(5, 1)
     fig.suptitle(f"{csAlg}")
 
@@ -245,7 +252,7 @@ if csAlg == "NUSF":
     ax5.plot(fidInput)
     ax5.plot(fixedTQTPPI(x_rad, nusfParAll[4]), linestyle='dashed', alpha=0.7)
     plt.show()
-
+"""
 
 """plt.plot(rmse)
 plt.xticks(np.arange(stop=FIDs.shape[0],step=len(SNRs)),np.round(initialTQSQ*100,2))

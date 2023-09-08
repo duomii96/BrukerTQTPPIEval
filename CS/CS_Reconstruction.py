@@ -21,7 +21,7 @@ class RecoCS:
         self.generateCSdata() # generates CSDAta
         self.NIter = 5000
         self.mode = 'soft'  # Thresholding mode: either 'soft' or 'hard'
-        self.threshold = 0.75
+        self.threshold = 0.7
         self.CS_Algorithm = CS_Algorithm
         print(f"CS Alg.: {self.CS_Algorithm}")
         self.x = np.arange(self.lenDataFull) * 2* np.pi / 360 # Thats default- but must be set from outside using x from GenClass
@@ -135,16 +135,17 @@ class RecoCS:
 
             for i in range(N_Iter):
                 ft_cs = fft(cs_input_init, axis=1)
-                th = t * np.max(np.abs(ft_cs), axis=1)
+                th = t * np.max(np.abs(ft_cs), axis=1) # get threshold
 
-                # Calculate the threshold along the second dimension
+                # where() selects from two arrays depending on the condition. If true 1, else 2
                 th_ft_cs = np.where(np.abs(ft_cs) >= th[:, np.newaxis], ft_cs, 0)  # Apply thresholding
 
-                cs_output_ft += th_ft_cs
+
+                cs_output_ft += th_ft_cs # data that is wanted, only peaks above threshold
 
                 th_cs = np.fft.ifft(th_ft_cs, axis=1)
-                th_cs[:, ~cs_mask] = 0  # Set masked elements to 0 along the second dimension
-                cs_input_init = np.real(cs_input_init) - th_cs
+                th_cs[:, ~cs_mask] = 0  # Set elements that haven#t been measured to 0 along the second dimension
+                cs_input_init = cs_input_init - th_cs
 
             cs_output = ifft(cs_output_ft, axis=1)
         #norm_TH = 0.99 * abs(self.TH_spectrum / max(self.TH_spectrum))
@@ -245,7 +246,8 @@ class RecoCS:
         p_initial = np.array([0.7754, -0.7195, 0.2081, 0.8009, -0.002237])  # 2% Agarose default
         #pOptAll, pCovAll = [], []
         try:
-            pAll = [curve_fit(self.fixedTQTPPI, x[self.samplingMask], self.CS_data[i ,self.samplingMask], p0=p_initial) for i in range(self.CS_data.shape[0])]
+            pall = [curve_fit(self.fixedTQTPPI, x[self.samplingMask], self.CS_data[i ,self.samplingMask], p0=p_initial) for i in range(self.CS_data.shape[0])]
+            pAll = pall[0]
         except:
             # If only one FID is fitted
             pAll = curve_fit(self.fixedTQTPPI, x[self.samplingMask], self.CS_data[self.samplingMask], p0=p_initial)

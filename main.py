@@ -1,4 +1,5 @@
 from NEOimportTQTPPIspectro import importTQTPPIspec
+from fixedEvoTiEval import fixedEvoTimesEval
 import numpy as np
 import matplotlib.pyplot as plt
 from TQTPPI_fit import FitTQTPPI, fixedFitTQTPPI
@@ -7,13 +8,20 @@ from dataToFroFile import toFile
 
 
 #studyPath = '/Users/duomii/Documents/PhD/Data/DZ_BR_immersed2_1_5_20221219_092719/'
-studyPath = '/Users/duomii/Documents/PhD/Data/DZ_DZ_CS_Test_BrukerLin_1_6_20230110_111523/' # BSA
+studyPath = '/Users/duomii/Desktop/PhD/Data/DZ_DZ_CS_Test_BrukerLin_1_6_20230110_111523/' # BSA
+#studyPath = '/Users/duomii/Desktop/PhD/Data/DZ_BRMIcells2_1_16_20230722_143518/'
+#studyPath = '/Users/duomii/Desktop/PhD/Data/DZ_BrMIcells_1_14_20230721_150838/'
 #studyPath = '/Users/duomii/Documents/PhD/Data/AgarTmDOTP/DZ_DZ_TmDOTP_ISMRM22_1_1_20221016_104839/'
-startFolder, stopFolder = 58, 61
+#startFolder, stopFolder = 13, 102
 #fixed
-#startFolder =   58; stopFolder = 61; IsFixed=1; #TQTPPI wo180 fix deltaAlpha = 5°, tevo = 5ms
+startFolder, stopFolder =58,  61; IsFixed=1; #TQTPPI wo180 fix deltaAlpha = 5°, tevo = 5ms
 #startFolder, stopFolder = 135, 137 #129, 152
-skipIndices = []
+#startFolder =   58; stopFolder  =   61; IsFixed=1;% TQTPPI wo180 fix deltaAlpha = 5°, tevo = 5ms
+# startFolder =   98; stopFolder  =   98; IsFixed=1;% TQTPPI wo180 fix deltaAlpha = 5°, tevo =7.5ms
+#startFolder =   98; stopFolder  =   98; IsFixed=1;
+# startFolder =   102; stopFolder  =   105; % TQTPPI wo180 fix deltaAlpha = 5°, tevo =2.5ms
+# startFolder =   110; stopFolder  =   113; % TQTPPI wo180 fix deltaAlpha = 5°, tevo = 20ms
+skipIndices = [18, 85]
 IsFixed = 1
 IsTauMixed=0
 
@@ -100,7 +108,7 @@ for k in np.arange(startFolder,stopFolder+1):
             mqFID_tmp = np.mean(mqFID, axis=1)
             mqSpectra_tmp = np.mean(mqSpectra, axis=1)
     #         mqFID1[:,j:j+NR-1] = mqFID
-            mqFIDall.append(mqFID_tmp)
+            fixedFIDall.append(mqFID_tmp)
             mqSpectraAll.append(mqSpectra_tmp)
             tau.append(evoTime)
             evoTimes[j] = method['EvoTime']
@@ -134,10 +142,13 @@ else:
     mqFID1 = np.mean(np.hstack(mqFIDall), axis=-1)
     mqSpectra1 = np.mean(np.hstack(mqSpectraAll), axis=-1)
     noise = stats.get_NoiseEstimate(np.hstack(mqSpectraAll))
+    print(f"Noise estimate: {noise}")
     fit1 = FitTQTPPI(mqFID1, method)
 #fit1.fit()
 #figure = fit1.get_figure()
 #plt.show()
 #toFile(fit1.get_fitParams(), studyPath, type='TQTPPI')
-"""plt.plot(np.real(mqSpectra), linewidth=0.4)
-plt.show()"""
+#plt.plot(np.real(mqSpectra1), linewidth=0.4)
+plt.plot(np.real(mqSpectra1))
+plt.grid()
+plt.show()
