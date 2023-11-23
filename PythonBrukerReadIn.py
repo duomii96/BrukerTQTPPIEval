@@ -85,9 +85,9 @@ def ReadParamFile(filepath):
 def ParseArray(current_file, line):
 
     # extract the arraysize and convert it to numpy
-    print(line)
+    #print(line)
     line = line[1:-2].replace(" ", "").split(",")
-    print(line)
+    #print(line)
     arraysize = np.array([int(x) for x in line])
 
     # then extract the next line
@@ -162,7 +162,7 @@ def ReadExperiment(path, Exp=None):
     t1 = time.time()
 
     # parameter files
-    print(f'{path}')
+    #print(f'{path}')
     data.method = ReadParamFile(path + "method")
 
     data.acqp = ReadParamFile(path+ "acqp")

@@ -16,7 +16,7 @@ class FitTQTPPI():
         self.fitVariant = 'SQTQ'
         self.alphas = method['PhaseList'][::2]
         self.fitVectorX = self.getX()
-        self.dataSaveDir = '/Users/duomii/Documents/PhD/MeasurementEval'
+        self.dataSaveDir = '/Users/duomii/Desktop/PhD/MeasurementEval'
 
         if np.amax(np.real(mqFID)) > np.amax(np.imag(mqFID)):
             self.mqFID = np.real(self.mqFID)/np.max(np.real(self.mqFID))
@@ -113,36 +113,37 @@ class FitTQTPPI():
     def get_fitParams(self):
         # return Params as dictionary ?
         # only for TQTPPI
-        params = {}
+        paramStore = {}
         paramkeys = ["ASQs", "T2s", "ASQf", "T2f", "ATQ"]
         errs = ["ASQs_std", "T2s_std", "ASQf_std", "T2f_std", "ATQ_std"]
 
         for idx,key in enumerate(paramkeys):
-            params[key] = self.params[idx]
-            params[errs[idx]] = self.stds[idx]
-        params["ratio"]= params["ATQ"]/(params["ASQs"]+params["ASQf"])
-        params["ratio_std"] = np.sqrt((params["ATQ_std"] / (params["ASQs"]+params["ASQf"])) ** 2 + (params["ATQ"] * params["ASQs_std"] / (params["ASQs"]+params["ASQf"]) ** 2) ** 2
-                            + (params["ATQ"] * params["ASQf_std"] / (params["ASQs"]+params["ASQf"]) ** 2) ** 2)
-        params["T2s"] *= 1000
-        params["T2f"] *= 1000
-        params["T2f_std"] *= 1000
-        params["T2s_std"] *= 1000
+            paramStore[key] = self.params[idx]
+            paramStore[errs[idx]] = self.stds[idx]
+        paramStore["ratio"]= paramStore["ATQ"] / (paramStore["ASQs"] + paramStore["ASQf"])
+        paramStore["ratio_std"] = np.sqrt((paramStore["ATQ_std"] / (paramStore["ASQs"] + paramStore["ASQf"])) ** 2 + (paramStore["ATQ"] * paramStore["ASQs_std"] / (paramStore["ASQs"] + paramStore["ASQf"]) ** 2) ** 2
+                                          + (paramStore["ATQ"] * paramStore["ASQf_std"] / (paramStore["ASQs"] + paramStore["ASQf"]) ** 2) ** 2)
+        paramStore["T2s"] *= 1000
+        paramStore["T2f"] *= 1000
+        paramStore["T2f_std"] *= 1000
+        paramStore["T2s_std"] *= 1000
 
-        if params["T2f"] > params["T2s"]:
+        if paramStore["T2f"] > paramStore["T2s"]:
             # swap T2 values if fast and slow component turn out to switched
             # Change Amplitudes as well ????
-            temp, tempStd = params["T2f"], params["T2f_std"]
-            params["T2f"], params["T2f_std"] = params["T2s"], params["T2s_std"]
-            params["T2s"], params["T2s_std"] = temp, tempStd
+            temp, tempStd = paramStore["T2f"], paramStore["T2f_std"]
+            paramStore["T2f"], paramStore["T2f_std"] = paramStore["T2s"], paramStore["T2s_std"]
+            paramStore["T2s"], paramStore["T2s_std"] = temp, tempStd
             del temp, tempStd
-        return params
+        return paramStore
 
 
 
 class fixedFitTQTPPI(FitTQTPPI):
 
-    def __init__(self, mqFIDs, evoTimes, secondDimFit=False):
+    def __init__(self, mqFIDs, evoTimes, numPhaseCycles,secondDimFit=False):
         self.mqFIDs = mqFIDs.copy()
+        self.numPhaseCycles = numPhaseCycles
         self.numFIDs, self.numPhaseInc = mqFIDs.shape[0], mqFIDs.shape[1]
         self.evoTimes = evoTimes
         # FT along phase increment. Axes swaps zero frequency only for given axis dimension
@@ -150,9 +151,14 @@ class fixedFitTQTPPI(FitTQTPPI):
 
         # self.sqVal  = np.amax(np.abs(mqFIDs[(int(mqFIDs.shape[0] / 4)):(int(mqFIDs.shape[0] / 2)), 0, 0]))
         # find index of max SQ signal, along pahse increment dimension and all spectr. Assumes max is SQ value.
-        _,self.posSq,_ = np.unravel_index(np.argmax(self.spectralDataAcq[1,:int(self.numPhaseInc/2),:], axis=None), self.spectralDataAcq[:,:int(self.numPhaseInc/2),:].shape)
+        try:
+            _,self.posSq,_ = np.unravel_index(np.argmax(self.spectralDataAcq[1,:int(self.numPhaseInc/2),:], axis=None), self.spectralDataAcq[:,:int(self.numPhaseInc/2),:].shape)
+        except:
+            _, self.posSq = np.unravel_index(np.argmax(self.spectralDataAcq[1, :int(self.numPhaseInc / 2)], axis=None),
+                self.spectralDataAcq[:, :int(self.numPhaseInc / 2)].shape)
+
         #self.posSq = posSq + (int(self.numPhaseInc / 4)) - 1
-        self.posTq = self.posSq - 32
+        self.posTq = self.posSq - 2*self.numPhaseCycles
 
         if secondDimFit:
             pass
@@ -163,8 +169,13 @@ class fixedFitTQTPPI(FitTQTPPI):
 
     def get_SQTQpeaks(self):
 
-        SQpeaks = self.spectralDataAcq[:,self.posSq,:]
-        TQpeaks = np.squeeze(self.spectralDataAcq[:,self.posTq,:])
+        try:
+            SQpeaks = self.spectralDataAcq[:,self.posSq,:]
+            TQpeaks = np.squeeze(self.spectralDataAcq[:,self.posTq,:])
+        except:
+            SQpeaks = self.spectralDataAcq[:, self.posSq]
+            TQpeaks = np.squeeze(self.spectralDataAcq[:, self.posTq])
+
         return SQpeaks, TQpeaks
 
     def get_NoiseEstimate(self, spec):

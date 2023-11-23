@@ -7,7 +7,11 @@ from functools import reduce
 
 
 def RMSE(prediction, target):
-    res = np.sqrt(np.mean((prediction-target)**2, axis=-1))
+    prediction = np.squeeze(prediction)
+    if prediction.ndim > 1:
+        res = np.abs(np.sqrt(np.mean((prediction-target)**2,axis=-1)))
+    else:
+        res = np.abs(np.sqrt(np.mean((prediction - target) ** 2)))
     return res
 
 def hamming(prediction, target):
@@ -33,13 +37,14 @@ def get_RecoTQSQ(spectra):
         what, posSq= np.unravel_index(np.argmax(np.abs(spectra[1, :int(spectra.shape[-1] / 2)]), axis=None),
                                       spectra[:, :int(spectra.shape[-1] / 2)].shape)
         posTq = posSq - 32
-        ratio = np.abs(spectra[:, posTq] / spectra[:, posSq])
+        ratio = np.abs(spectra[:, posTq]) / np.abs(spectra[:, posSq])
     except:
         (posSq,) = np.unravel_index(np.argmax(np.abs(spectra[:int(spectra.shape[-1] / 2)]), axis=None),
                                        spectra[:int(spectra.shape[-1] / 2)].shape)
 
         posTq = posSq - 32
-        ratio = np.abs(spectra[ posTq] / spectra[posSq])
+        SQ, TQ = spectra[posTq], spectra[posTq]
+        ratio = np.abs(spectra[ posTq]) / np.abs(spectra[posSq])
     # self.posSq = posSq + (int(self.numPhaseInc / 4)) - 1
 
     return ratio

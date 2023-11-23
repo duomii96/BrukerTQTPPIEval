@@ -1,8 +1,8 @@
 import PythonBrukerReadIn as pbr
 import numpy as np
 import scipy
-
-
+from numpy.fft import fft
+from numpy.fft import fftshift as shift
 
 def importTQTPPIspec(data_path, spikeComp, phaseCorr, preDCcomp, filter2ndDim, filterFac2ndDim,
                      preFilter, filterFacPre, w0corr, freqDriftVal, postDCcomp, filterFID, filterFacPost, onlyReal):

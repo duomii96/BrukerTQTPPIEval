@@ -1,17 +1,19 @@
 import numpy as np
+import matplotlib.pyplot as plt
 
 
-def fixedEvoTimesEval(spectralDataAcq, evoTimes, secondDimFit):
-    spectralDataAcq = np.array(spectralDataAcq)
+def fixedEvoTimesEval(spectralDataAcq, evoTimes, TQSQspacing, secondDimFit):
+    spectralDataAcq = spectralDataAcq
 
     try:
-        _, posSq, _ = np.unravel_index(
-            np.argmax(spectralDataAcq[1, int(spectralDataAcq.shape[0] / 4):int(spectralDataAcq.shape[0] / 2), :], axis=None),
-            spectralDataAcq[:, int(spectralDataAcq.shape[0] / 4):int(spectralDataAcq.shape[0] / 2), :].shape)
+        posSq, _ = np.unravel_index(
+            np.argmax(spectralDataAcq[:int(spectralDataAcq.shape[0] / 2), :], axis=None),
+            spectralDataAcq[:int(spectralDataAcq.shape[0] / 2), :].shape)
     except:
         _, posSq = np.unravel_index(np.argmax(spectralDataAcq[1, int(spectralDataAcq.shape[0] / 4):int(spectralDataAcq.shape[0] / 2)], axis=None),
                                          spectralDataAcq[:, int(spectralDataAcq.shape[0] / 4):int(spectralDataAcq.shape[0] / 2)].shape)
-    posTq = posSq - 32
+    posTq = posSq - TQSQspacing
+    print(f'TQ at SpecPos: {posTq} \n')
     if posTq < 1:
         print(f"Not able to find TQ peak for EvoTime: {evoTimes}")
         posTq = 17
@@ -23,7 +25,7 @@ def fixedEvoTimesEval(spectralDataAcq, evoTimes, secondDimFit):
     realData = np.real(spectralDataAcq)
     fixedSQpeaks = np.max(realData, axis=0)
 
-    ratio = realData[posTq, :] / realData[posTq, :] * 100
+    ratio = realData[posTq, :] / realData[posSq, :] * 100
 
     normalizedSQpeaks = fixedSQpeaks / np.max(fixedSQpeaks) * 100
 
@@ -31,7 +33,8 @@ def fixedEvoTimesEval(spectralDataAcq, evoTimes, secondDimFit):
     for i in range(spectralDataAcq.shape[1]):
         noise_var[i] = np.var(np.squeeze(realData[noiseIdcs, i]))
 
-    fixedTQpeaks = realData[posTq, :]
+    fixedTQpeaks = realData[posTq, :].transpose()
+
 
     return fixedTQpeaks, fixedSQpeaks, ratio, noise_var
 

@@ -8,23 +8,28 @@ from scipy.optimize import curve_fit
 
 class RecoCS:
 
-    def __init__(self, DataFull, samplingMethod, accelerationFactor, CS_Algorithm='IST-D',simul=True, multipleFIDs=False):
+    def __init__(self, DataFull, samplingMethod, accelerationFactor, CS_Algorithm='IST-D',simul=True, preSampled=False, multipleFIDs=False):
         initialData = DataFull
         self.multipleFIDs = multipleFIDs
-        if DataFull.ndim > 1:
+        self.preSampled = preSampled
+        if DataFull.ndim > 1 and not(preSampled):
             self.multipleFIDs = True
         self.DataFull = initialData
         self.samplingMethod = samplingMethod
         self.accelerationFactor = accelerationFactor
         self.lenDataFull = DataFull.shape[-1]
-        self.lenDataCS = int(DataFull.shape[-1] / accelerationFactor)
+        if self.lenDataFull > 1152:
+            self.lenDataFull = 1152
+        self.lenDataCS = int(self.lenDataFull / accelerationFactor)
         self.generateCSdata() # generates CSDAta
-        self.NIter = 5000
+        self.NIter = 200
         self.mode = 'soft'  # Thresholding mode: either 'soft' or 'hard'
-        self.threshold = 0.7
+        self.threshold = 0.5
         self.CS_Algorithm = CS_Algorithm
         print(f"CS Alg.: {self.CS_Algorithm}")
         self.x = np.arange(self.lenDataFull) * 2* np.pi / 360 # Thats default- but must be set from outside using x from GenClass
+        self.modelBased = False
+        self.alpha = 1 # weighting for modelbased reconstruction
 
     @staticmethod
     def weightedSoftTH(y, thresholdMatrix):
@@ -41,15 +46,32 @@ class RecoCS:
 
         if self.samplingMethod == 'PoissonGap':
             self.samplingMask = self.generate_poisson_gap()
+        elif self.samplingMethod == 'None' and self.preSampled:
+            #self.CS_data = self.DataFull
+            """mask_idcs = np.arange(len(self.DataFull))[::self.accelerationFactor]
+            mask = np.zeros((len(self.DataFull,)))
+            mask[mask_idcs] = 1
+            self.samplingMask = np.array(mask, dtype=bool)"""
+            self.samplingMask = self.generateCSMaskUniform()
         else:
             self.samplingMask = self.generateCSMaskUniform()
         CS_data = self.DataFull.copy()
 
-        if self.multipleFIDs:
+        if self.multipleFIDs and not(self.preSampled):
             CS_data[:,np.invert(self.samplingMask)]= 0
+        elif self.samplingMethod == 'None' and self.preSampled:
+            # complexDataAllphase is CS data input
+            preCSdata = CS_data[self.samplingMask, :]
+            CS_data = np.mean(preCSdata, axis=-1)
+            CS_data = np.real(CS_data)/np.amax(np.real(CS_data))
+            CS_data_new = np.zeros(self.lenDataFull)
+            CS_data_new[self.samplingMask] = CS_data
+            CS_data = CS_data_new
+            #CS_data = np.real(CS_data_new) / np.amax(CS_data_new)
         else:
             CS_data[np.invert(self.samplingMask)] = 0
         self.CS_data = CS_data
+
 
 
 
@@ -111,6 +133,7 @@ class RecoCS:
         elif self.CS_Algorithm == 'NUSF':
             print("X data adjusted correctly ?")
             cs_output =self.nonUniformFit(self.x)
+
             #cs_output = CLEAN(obj, cs_input, cs_mask)
 
         else:
@@ -126,12 +149,16 @@ class RecoCS:
         :return: Reconstructed Spectrum
         """
         N_Iter = self.NIter
+        A_tq_temp = []
         t = self.threshold
         cs_input_init = cs_input.copy()
         cs_output_ft = np.zeros_like(cs_input, dtype=np.complex128) # initialize x as zero vector
-
+        cs_mod_basedInit = np.zeros_like(cs_input, dtype=np.complex128)
+        p_initial = np.array([0.7754, -0.7195, 0.2081, 0.8009, -0.002237]) # for model based
         if self.multipleFIDs:
             THplot = []
+
+            print("Multi")
 
             for i in range(N_Iter):
                 ft_cs = fft(cs_input_init, axis=1)
@@ -143,6 +170,7 @@ class RecoCS:
 
                 cs_output_ft += th_ft_cs # data that is wanted, only peaks above threshold
 
+
                 th_cs = np.fft.ifft(th_ft_cs, axis=1)
                 th_cs[:, ~cs_mask] = 0  # Set elements that haven#t been measured to 0 along the second dimension
                 cs_input_init = cs_input_init - th_cs
@@ -152,6 +180,7 @@ class RecoCS:
         #norm_TH_it = norm_TH.copy()
 
         else:
+            print("SINGLE ")
             for i in range(N_Iter):
                 ft_cs = fft(cs_input_init)
                 th = t * max(abs(ft_cs)) # th is first a relative threshold
@@ -166,12 +195,34 @@ class RecoCS:
                     th_ft_cs = fft(th_EXP)"""
 
                 cs_output_ft += th_ft_cs
+                cs_out_shifted = fftshift(cs_output_ft)
+                posSq = np.argmax(cs_out_shifted)
+
+                posTq = posSq - 32
+                A_tq_temp.append(np.abs(cs_out_shifted[posTq]))
+                """if self.modelBased:
+                    plt.figure()
+                    plt.plot(np.real(cs_output_ft), linewidth=0.7, label=f'Before')
+                    dat_temp = np.real(ifft(cs_output_ft))
+                    popt_temp, pcov_temp = curve_fit(self.fixedTQTPPI, self.x,
+                                                     dat_temp,
+                                                     p0=p_initial)
+
+                    fid_temp = self.fixedTQTPPI(self.x, *popt_temp)
+                    fft_fid_temp = fft(fid_temp)
+                    cs_output_ft += self.alpha * np.real(fft_fid_temp)
+                    del dat_temp"""
+                    
+
 
                 th_cs = ifft(np.array(th_ft_cs))
                 th_cs[~cs_mask] = 0
                 cs_input_init = np.real(cs_input_init) -th_cs
 
             cs_output = ifft(cs_output_ft)
+            plt.figure()
+            plt.plot(A_tq_temp)
+            plt.yscale("log")
         return cs_output
 
     def IST_S(self, cs_input, cs_mask):
@@ -240,14 +291,11 @@ class RecoCS:
         Fit the undersampled FID withput Reconstruction of the Missing data points.
         :return:
         """
-        #fitVecX = np.tile(np.arange(self.lenDataFull)[self.samplingMask], self.DataFull.shape[0]).reshape(self.DataFull.shape[0],-1)
-        #fitVecX = np.arange(self.lenDataFull, dtype=np.float)[self.samplingMask]
-        #fitVecX *= 2 * np.pi / 360
+
         p_initial = np.array([0.7754, -0.7195, 0.2081, 0.8009, -0.002237])  # 2% Agarose default
-        #pOptAll, pCovAll = [], []
+
         try:
-            pall = [curve_fit(self.fixedTQTPPI, x[self.samplingMask], self.CS_data[i ,self.samplingMask], p0=p_initial) for i in range(self.CS_data.shape[0])]
-            pAll = pall[0]
+            pAll = [curve_fit(self.fixedTQTPPI, x[self.samplingMask], self.CS_data[i ,self.samplingMask], p0=p_initial) for i in range(self.CS_data.shape[0])]
         except:
             # If only one FID is fitted
             pAll = curve_fit(self.fixedTQTPPI, x[self.samplingMask], self.CS_data[self.samplingMask], p0=p_initial)
