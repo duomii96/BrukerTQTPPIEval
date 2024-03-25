@@ -1,14 +1,12 @@
-import numpy as np
-import matplotlib.pyplot as plt
+from commonImports import *
 
 
 def fixedEvoTimesEval(spectralDataAcq, evoTimes, TQSQspacing, secondDimFit):
     spectralDataAcq = spectralDataAcq
+    datashape = np.shape(spectralDataAcq)
 
     try:
-        posSq, _ = np.unravel_index(
-            np.argmax(spectralDataAcq[:int(spectralDataAcq.shape[0] / 2), :], axis=None),
-            spectralDataAcq[:int(spectralDataAcq.shape[0] / 2), :].shape)
+        posSq, _ = np.unravel_index(np.argmax(spectralDataAcq[:int(datashape[0]/2),]), spectralDataAcq.shape)
     except:
         _, posSq = np.unravel_index(np.argmax(spectralDataAcq[1, int(spectralDataAcq.shape[0] / 4):int(spectralDataAcq.shape[0] / 2)], axis=None),
                                          spectralDataAcq[:, int(spectralDataAcq.shape[0] / 4):int(spectralDataAcq.shape[0] / 2)].shape)

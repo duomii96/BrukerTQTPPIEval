@@ -1,7 +1,26 @@
-import numpy as np
+from commonImports import *
 import os
 
+from skimage.restoration import (denoise_wavelet, estimate_sigma)
 
+# estimate sigma is a wavelet based noise estimator
+
+
+
+def plot_shifted_spectrum(spectra, x_shift = 3):
+    # Plot shifted spectra in one plot to better compare peaks
+    # shape of spectra: (Number, k-space -length)
+    SQIdx = np.argmax(spectra[0,:])
+    fig, ax = plt.subplots()
+    x0_values = np.arange(spectra.shape[-1])  # Generating x values for each spectrum
+    for index, spectrum in enumerate(np.real(spectra)):
+        shifted_x = x0_values + (index * x_shift)  # Shifting x values for each spectrum
+        ax.plot(shifted_x, spectrum, label=f'Spectrum {index + 1}', linewidth=0.8)
+    ax.axvline(x=SQIdx, color='red', linestyle='--', linewidth=0.7, label='SQ Unshifted')
+    ax.set_xlabel('X-axis')
+    ax.set_ylabel('Intensity')
+    ax.legend()
+    plt.show()
 def get_NoiseEstimate(spec):
     """
     Takes mqSpectra as input and calculates
@@ -72,3 +91,17 @@ def getTQSQ(spectra):
             ratios = TQpeaks / SQpeaks
     return SQpeaks, TQpeaks, ratios
 
+
+
+def waveletDenoise(signal, numWavelets=3, mode='soft'):
+    """
+    Denoises 1D-Signal- this one is actually for 2D images but can be used here as well.
+    BayesShrink is a from of soft Thresholding that estimates each new threshold.
+    :param signal:
+    :param mode: soft or hard
+    :return:
+    """
+
+    x_denoise = denoise_wavelet(signal, method='BayesShrink', mode=mode, wavelet_levels=numWavelets, wavelet='sym8', rescale_sigma='True')
+
+    return x_denoise

@@ -1,15 +1,17 @@
-from commonImports import *
+import numpy as np
 import math
+from scipy.optimize import fmin
 
 Na_gamma = 11.262e6  # 1/(T*s), gyromagnetic ratio for 23Na
 
 
+
+def get_bruker_groupDelay(acqp):
+    return np.floor(np.double(acqp['ACQ_RxFilterInfo'][1:-1].split(',')[0]))
 def get_randomAB(a, b, N):
     r = a + (b - a) * np.random.rand(N)
     return r
 
-def get_tauOpt(T_f, T_s):
-    return
 
 def get_wPnorm(vec, w, p):
     wNMRS = np.linalg.norm(vec * w, p)
@@ -31,8 +33,6 @@ def get_wQs(tauCs, tauC0, wQ0, wQ1):
     wQs[tauCs > tauC0] = wQ1
     return wQs
 
-def get_bruker_groupDelay(acqp):
-    return np.floor(np.double(acqp['ACQ_RxFilterInfo'][1:-1].split(',')[0]))
 
 def get_logRange(startExp, endExp, stepSize):
     r_tmp = np.arange(startExp, endExp)
@@ -59,14 +59,22 @@ def get_JenModel(T1f, T1s, T2f, T2s, w0):
     Rs_mess = 1 / Ts_mess
 
     wQbar = 0
-    Jen0 = 10;
-    tauC0 = 5e-8;
-    wQ0 = 1e5;
-    wShift_RMS0 = 0
-    intialVec = [Jen0, tauC0, wQ0, wShift_RMS0]
+    Jen0 = 10
+    tauC0 = 5e-8
+    wQ0 = 1e5
+    wShift_RMS0 = 7
+    initialVec = [Jen0, tauC0, wQ0, wShift_RMS0]
 
     weights = Ts_mess
     p = 2  # p-Norm value
+
+    def MinFun(JenVal):
+        return get_wPnorm((get_Rs_ZQSQ_Jen(JenVal[0], JenVal[1], JenVal[2], wQbar, JenVal[3], w0) - Rs_mess), weights,p)
+
+    JenVal = fmin(MinFun, initialVec)
+
+    Jen, tauC, wQ, wShift_RMS = JenVal[0], JenVal[1], JenVal[2], JenVal[3]
+    return  Jen, tauC, wQ, wShift_RMS
 
 def get_tauOpt(Tif, Tis):
     return np.log(Tis/Tif)/(1/Tif-1/(Tis))
@@ -183,6 +191,12 @@ def get_Rs_aniso_ptauC_wQ(q, a, b, tcm, wQ0, wQ1, tauC0, wQbar, w0):
 
     return Rs
 
+def get_Rs_ZQSQ_Jen(Jen, tauC, wQ, wQbar, wShift_RMS, w0):
+    R0s = get_Rs_Jen(0, tauC, wQ, wQbar, Jen, wShift_RMS, w0)
+    R1s = get_Rs_Jen(1, tauC, wQ, wQbar, Jen, wShift_RMS, w0)
+    Rs = np.concatenate([R0s[:2], R1s[:2]])
+    return Rs
+
 def get_f(q, t, tauC, wQ, w0):
     J0, _ = get_J(0, tauC, wQ, w0)
     J1, _ = get_J(1, tauC, wQ, w0)
@@ -216,6 +230,51 @@ def get_f(q, t, tauC, wQ, w0):
         R31 = J1 + J2
         f333 = np.exp(-R31 * t)
         fqkks = [f333]
+
+    return fqkks
+
+#  Relaxation functions f(t) --> Km's Beiträge erstmal vernachlässigt
+#  anisotropic environment, B0 inhomgeneities
+# Jen Model
+def get_f_Jen(q, t, tauC, wQ, wQbar, Jen, wShift_RMS, w0):
+    J0, K0 = get_J_Jen(0, tauC, wQ, Jen, w0)
+    J1, K1 = get_J_Jen(1, tauC, wQ, Jen, w0)
+    J2, K2 = get_J_Jen(2, tauC, wQ, Jen, w0)
+    Rs = get_Rs_Jen(q, tauC, wQ, wQbar, Jen, wShift_RMS, w0)
+
+    if q == 0:
+        R01, R02, R03 = Rs
+        f011 = 1/5 * (np.exp(-R01 * t) + 4 * np.exp(-R02 * t))
+        f013 = 2/5 * (np.exp(-R01 * t) - np.exp(-R02 * t))
+        f033 = 1/5 * (4 * np.exp(-R01 * t) + np.exp(-R02 * t))
+        f022 = np.exp(-R03 * t)
+        fqkks = np.vstack((f011, f013, f033, f022))
+    elif q == 1 or q == -1:
+        R11, R12, R13 = Rs
+        mu = J2 / np.sqrt(J2**2 - wQbar**2)
+        v = wQbar / np.sqrt(J2**2 - wQbar**2)
+
+        f111 = 1/5 * (3/2 * (1 + mu) * np.exp(-R11 * t) + 2 * np.exp(-R12 * t) + 3/2 * (1 - mu) * np.exp(-R13 * t))
+        f122 = 1/2 * ((1 - mu) * np.exp(-R11 * t) + (1 + mu) * np.exp(-R13 * t))
+        f133 = 1/5 * ((1 + mu) * np.exp(-R11 * t) + 3 * np.exp(-R12 * t) + (1 - mu) * np.exp(-R13 * t))
+        f113 = np.sqrt(6)/5 * (1/2 * (1 + mu) * np.exp(-R11 * t) - np.exp(-R12 * t) + 1/2 * (1 - mu) * np.exp(-R13 * t))
+        f112 = 1j/2 * np.sqrt(3)/5 * v * (np.sign(q) * np.exp(-R11 * t) - np.sign(q) * np.exp(-R13 * t))
+        f123 = 1j/np.sqrt(10) * v * (np.sign(q) * np.exp(-R11 * t) - np.sign(q) * np.exp(-R13 * t))
+
+        fqkks = np.vstack((f111, f113, f133, f112, f123, f122))  # * 1/2 * (q + 1)
+    elif q == 2 or q == -2:
+        R21, R22 = Rs
+        mu = J1 / np.sqrt(J1**2 - wQbar**2)
+        v = wQbar / np.sqrt(J1**2 - wQbar**2)
+
+        f222 = 1/2 * ((1 + mu) * np.exp(-R21 * t) + (1 - mu) * np.exp(-R22 * t))
+        f233 = 1/2 * ((1 + mu) * np.exp(-R21 * t) + (1 - mu) * np.exp(-R22 * t))
+        f223 = -1j/2 * v * (np.sign(q) * np.exp(-R21 * t) - np.sign(q) * np.exp(-R22 * t))
+        fqkks = np.vstack((f222, f233, f223))
+    elif q == 3 or q == -3:
+        R31 = Rs[0]
+        f333 = np.exp(-R31 * t)
+        fqkks = np.vstack((f333))
 
     return fqkks
 
